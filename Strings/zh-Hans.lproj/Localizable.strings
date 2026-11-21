@@ -17,3 +17,10 @@
 "Brightness" = "明亮度";
 "Sound controls" = "音色设置";
 "Stop all sound" = "停止所有声音";
+"Legato" = "连奏";
+"Bow position" = "运弓位置";
+"Fingerboard" = "指板侧";
+"Bridge" = "琴码侧";
+"Bowing" = "运弓奏法";
+"Sustained" = "持续弓奏";
+"Spiccato" = "跳弓";

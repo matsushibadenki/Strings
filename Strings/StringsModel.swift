@@ -27,6 +27,18 @@ final class StringsModel {
         strings_dsp_all_off(handle)
     }
 
+    func setSpiccato(_ enabled: Bool) {
+        strings_dsp_set_spiccato(handle, enabled)
+    }
+
+    func setLegato(_ enabled: Bool) {
+        strings_dsp_set_legato(handle, enabled)
+    }
+
+    func setBowPosition(_ position: Float) {
+        strings_dsp_set_bow_position(handle, position)
+    }
+
     func setBrightness(_ amount: Float) {
         strings_dsp_set_brightness(handle, amount)
     }

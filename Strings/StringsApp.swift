@@ -36,6 +36,9 @@ struct StringsView: View {
     @State private var accessibilityNotes: [Int: UUID] = [:]
     @State private var info = false
     @State private var showSound = false
+    @AppStorage("legato") private var legato = false
+    @AppStorage("spiccato") private var spiccato = false
+    @AppStorage("bowPositionPercent") private var bowPositionPercent = 75
     @AppStorage("brightnessPercent") private var brightnessPercent = 45
     @AppStorage("roomReverbPercent") private var reverbPercent = 30
     @State private var visibleNotes = 14
@@ -90,6 +93,12 @@ struct StringsView: View {
         .onDisappear {
             midi.stop()
             audio.stop()
+        }
+        .onChange(of: bowArticulation.wrappedValue, initial: true) { _, value in
+            audio.setBowArticulation(legato: value == .legato, spiccato: value == .spiccato)
+        }
+        .onChange(of: bowPositionPercent, initial: true) { _, value in
+            audio.setBowPosition(min(100, max(0, value)))
         }
         .onChange(of: brightnessPercent, initial: true) { _, value in
             audio.setBrightness(min(100, max(0, value)))
@@ -156,8 +165,36 @@ struct StringsView: View {
         }
     }
 
+    private var bowArticulation: Binding<BowArticulation> {
+        Binding(
+            get: {
+                if spiccato { return .spiccato }
+                return legato ? .legato : .sustained
+            },
+            set: { option in
+                legato = option == .legato
+                spiccato = option == .spiccato
+            }
+        )
+    }
+
     private var soundControls: some View {
         VStack(alignment: .leading, spacing: 16) {
+            Picker("Bowing", selection: bowArticulation) {
+                Text("Sustained").tag(BowArticulation.sustained)
+                Text("Legato").tag(BowArticulation.legato)
+                Text("Spiccato").tag(BowArticulation.spiccato)
+            }
+            .pickerStyle(.menu)
+            soundSlider("Bow position", percent: $bowPositionPercent)
+            HStack {
+                Text("Fingerboard")
+                Spacer()
+                Text("Bridge")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.top, -12)
             soundSlider("Brightness", percent: $brightnessPercent)
             soundSlider("Room reverb", percent: $reverbPercent)
         }
@@ -268,8 +305,14 @@ struct StringsView: View {
     }
 
     private func updateTouches(_ notes: Set<Int>) {
-        for note in touches.subtracting(notes) where accessibilityNotes[note] == nil && !hasMIDIKey(note) { audio.noteOff(note) }
-        for note in notes.subtracting(touches) { audio.noteOn(note, velocity: Int(velocity), pizzicato: pizzicato || !midiPizzicatoSources.isEmpty) }
+        // A dragged finger can leave one key and enter another in the same update.
+        let releases = touches.subtracting(notes).filter { accessibilityNotes[$0] == nil && !hasMIDIKey($0) }
+        let presses = notes.subtracting(touches).sorted()
+        let plucked = pizzicato || !midiPizzicatoSources.isEmpty
+        let connect = bowArticulation.wrappedValue == .legato && !plucked
+        if !connect { releases.forEach(audio.noteOff) }
+        for note in presses { audio.noteOn(note, velocity: Int(velocity), pizzicato: plucked) }
+        if connect { releases.forEach(audio.noteOff) }
         touches = notes
     }
 
@@ -362,6 +405,10 @@ struct StringsView: View {
             if !touches.contains(note) && !hasMIDIKey(note) { audio.noteOff(note) }
         }
     }
+}
+
+private enum BowArticulation: Hashable {
+    case sustained, legato, spiccato
 }
 
 private struct MIDIKey: Hashable {

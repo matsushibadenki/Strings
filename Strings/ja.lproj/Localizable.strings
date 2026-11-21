@@ -17,3 +17,10 @@
 "Brightness" = "音色の明るさ";
 "Sound controls" = "音色調整";
 "Stop all sound" = "すべての音を停止";
+"Legato" = "レガート";
+"Bow position" = "弓の位置";
+"Fingerboard" = "指板側";
+"Bridge" = "駒側";
+"Bowing" = "弓の奏法";
+"Sustained" = "持続音";
+"Spiccato" = "スピッカート";

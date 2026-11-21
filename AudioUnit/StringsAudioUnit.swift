@@ -19,6 +19,9 @@ final class StringsAudioUnit: AUAudioUnit {
     private var renderer: InstrumentRender?
     private let reverbPercent = Atomic<Float>(30)
     private let brightnessPercent = Atomic<Float>(45)
+    private let bowPositionPercent = Atomic<Float>(75)
+    private let legato = Atomic<Bool>(false)
+    private let spiccato = Atomic<Bool>(false)
 
     override init(componentDescription: AudioComponentDescription,
                   options: AudioComponentInstantiationOptions = []) throws {
@@ -30,26 +33,35 @@ final class StringsAudioUnit: AUAudioUnit {
         inputs = AUAudioUnitBusArray(audioUnit: self, busType: .input, busses: [])
 
         let bundle = Bundle(for: StringsAUFactory.self)
-        func percentParameter(_ identifier: String, label: String,
-                              address: AUParameterAddress, initial: AUValue) -> AUParameter {
+        func makeParameter(_ identifier: String, label: String,
+                              address: AUParameterAddress, initial: AUValue,
+                              unit: AudioUnitParameterUnit = .percent) -> AUParameter {
             let parameter = AUParameterTree.createParameter(
                 withIdentifier: identifier, name: NSLocalizedString(label, bundle: bundle, comment: ""),
-                address: address, min: 0, max: 100, unit: .percent, unitName: nil,
+                address: address, min: 0, max: unit == .boolean ? 1 : 100, unit: unit, unitName: nil,
                 flags: [.flag_IsReadable, .flag_IsWritable], valueStrings: nil, dependentParameters: nil
             )
             parameter.value = initial
             return parameter
         }
         let tree = AUParameterTree.createTree(withChildren: [
-            percentParameter("roomReverb", label: "Room reverb", address: 0, initial: 30),
-            percentParameter("brightness", label: "Brightness", address: 1, initial: 45),
+            makeParameter("roomReverb", label: "Room reverb", address: 0, initial: 30),
+            makeParameter("brightness", label: "Brightness", address: 1, initial: 45),
+            makeParameter("bowPosition", label: "Bow position", address: 2, initial: 75),
+            makeParameter("legato", label: "Legato", address: 3, initial: 0, unit: .boolean),
+            makeParameter("spiccato", label: "Spiccato", address: 4, initial: 0, unit: .boolean),
         ])
         tree.implementorValueObserver = { [weak self] parameter, value in
             self?.setParameter(parameter.address, value)
         }
         tree.implementorValueProvider = { [weak self] parameter in
-            if parameter.address == 1 { return self?.brightnessPercent.load(ordering: .relaxed) ?? 45 }
-            return self?.reverbPercent.load(ordering: .relaxed) ?? 30
+            switch parameter.address {
+            case 1: return self?.brightnessPercent.load(ordering: .relaxed) ?? 45
+            case 2: return self?.bowPositionPercent.load(ordering: .relaxed) ?? 75
+            case 3: return self?.legato.load(ordering: .relaxed) == true ? 1 : 0
+            case 4: return self?.spiccato.load(ordering: .relaxed) == true ? 1 : 0
+            default: return self?.reverbPercent.load(ordering: .relaxed) ?? 30
+            }
         }
         parameterTree = tree
     }
@@ -88,6 +100,9 @@ final class StringsAudioUnit: AUAudioUnit {
             flags.pointee.remove(.unitRenderAction_OutputIsSilence)
             renderer.model.setReverb(self.reverbPercent.load(ordering: .relaxed) / 100)
             renderer.model.setBrightness(self.brightnessPercent.load(ordering: .relaxed) / 100)
+            renderer.model.setBowPosition(self.bowPositionPercent.load(ordering: .relaxed) / 100)
+            renderer.model.setLegato(self.legato.load(ordering: .relaxed))
+            renderer.model.setSpiccato(self.spiccato.load(ordering: .relaxed))
             return renderer.render(frames: count, time: timestamp.pointee.mSampleTime, output: output,
                                    events: events, setParameter: self.setParameter)
         }
@@ -99,6 +114,9 @@ final class StringsAudioUnit: AUAudioUnit {
         switch address {
         case 0: reverbPercent.store(clamped, ordering: .relaxed)
         case 1: brightnessPercent.store(clamped, ordering: .relaxed)
+        case 2: bowPositionPercent.store(clamped, ordering: .relaxed)
+        case 3: legato.store(percent >= 0.5, ordering: .relaxed)
+        case 4: spiccato.store(percent >= 0.5, ordering: .relaxed)
         default: break
         }
     }
@@ -178,6 +196,9 @@ private final class InstrumentRender {
                     switch parameter.parameterAddress {
                     case 0: model.setReverb(amount)
                     case 1: model.setBrightness(amount)
+                    case 2: model.setBowPosition(amount)
+                    case 3: model.setLegato(parameter.value >= 0.5)
+                    case 4: model.setSpiccato(parameter.value >= 0.5)
                     default: break
                     }
                 }

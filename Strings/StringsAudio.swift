@@ -106,6 +106,10 @@ final class StringsAudio: ObservableObject {
         expressionCommand = -131
         queue.push(-1)
     }
+    func setBowArticulation(legato: Bool, spiccato: Bool) {
+        worker.bowArticulation.store(spiccato ? 2 : (legato ? 1 : 0), ordering: .relaxed)
+    }
+    func setBowPosition(_ percent: Int) { worker.bowPosition.store(percent, ordering: .relaxed) }
     func setReverb(_ percent: Int) { worker.setReverb(percent) }
     func setBrightness(_ percent: Int) { worker.setBrightness(percent) }
 }
@@ -115,6 +119,8 @@ private final class AudioEngineWorker: @unchecked Sendable {
     private let lifecycle = DispatchQueue(label: "com.local.BowedStrings.audio", qos: .userInitiated)
     private var engine: AVAudioEngine?
     private var notes: NoteQueue?
+    let bowArticulation = Atomic<Int>(0)
+    let bowPosition = Atomic<Int>(75)
     private let reverb = Atomic<Int>(30)
     private let body = Atomic<Int>(45)
 
@@ -171,6 +177,10 @@ private final class AudioEngineWorker: @unchecked Sendable {
                 return kAudio_ParamError
             }
             if let self {
+                let articulation = self.bowArticulation.load(ordering: .relaxed)
+                model.setLegato(articulation == 1)
+                model.setSpiccato(articulation == 2)
+                model.setBowPosition(Float(self.bowPosition.load(ordering: .relaxed)) / 100)
                 model.setReverb(Float(self.reverb.load(ordering: .relaxed)) / 100)
                 model.setBrightness(Float(self.body.load(ordering: .relaxed)) / 100)
             }
