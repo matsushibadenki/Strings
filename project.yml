@@ -1,0 +1,95 @@
+name: Strings
+options:
+  developmentLanguage: en
+  deploymentTarget:
+    iOS: "18.0"
+    macOS: "15.0"
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_OBJC_BRIDGING_HEADER: "$(SRCROOT)/NativeEngine/StringsDSP.h"
+    LIBRARY_SEARCH_PATHS: ["$(inherited)", "$(DERIVED_FILE_DIR)"]
+    OTHER_LDFLAGS: ["$(inherited)", "-lstrings_native"]
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    SWIFT_VERSION: "5.0"
+targetTemplates:
+  NativeStrings:
+    preBuildScripts:
+      - name: Build Strings DSP
+        script: /bin/bash "${SRCROOT}/NativeEngine/build-xcode.sh"
+        basedOnDependencyAnalysis: false
+        outputFiles:
+          - "$(DERIVED_FILE_DIR)/libstrings_native.a"
+  StringsAU:
+    type: app-extension
+    sources:
+      - AudioUnit/StringsAudioUnit.swift
+      - path: Strings
+        excludes: [StringsApp.swift, KeyboardView.swift, StringsAudio.swift, MIDIInput.swift]
+    settings:
+      base:
+        PRODUCT_NAME: StringsAudioUnit
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+targets:
+  Strings:
+    templates: [NativeStrings]
+    type: application
+    platform: iOS
+    sources: [Strings]
+    dependencies:
+      - target: StringsAU-iOS
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.local.BowedStrings
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Strings
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        TARGETED_DEVICE_FAMILY: "1,2"
+  Strings-macOS:
+    templates: [NativeStrings]
+    type: application
+    platform: macOS
+    sources: [Strings]
+    dependencies:
+      - target: StringsAU-macOS
+        embed: true
+    settings:
+      base:
+        PRODUCT_NAME: Strings
+        PRODUCT_BUNDLE_IDENTIFIER: com.local.BowedStrings
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Strings
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.music
+        ENABLE_HARDENED_RUNTIME: YES
+  StringsAU-iOS:
+    templates: [NativeStrings, StringsAU]
+    platform: iOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.local.BowedStrings.AudioUnit
+        INFOPLIST_FILE: AudioUnit/Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
+  StringsAU-macOS:
+    templates: [NativeStrings, StringsAU]
+    platform: macOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.local.BowedStrings.AudioUnit
+        INFOPLIST_FILE: AudioUnit/Info.plist
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: AudioUnit/StringsAU.entitlements
+schemes:
+  Strings:
+    build:
+      targets:
+        Strings: all
+  Strings-macOS:
+    build:
+      targets:
+        Strings-macOS: all

@@ -1,0 +1,21 @@
+# macOS Finder metadata
+.DS_Store
+._*
+
+# Xcode user settings
+xcuserdata/
+*.xcuserstate
+**/xcshareddata/IDEWorkspaceChecks.plist
+
+# Xcode and Swift build products
+DerivedData/
+/.build/
+/build/
+*.xcresult/
+*.xcarchive/
+*.dSYM/
+*.dSYM.zip
+*.ipa
+
+# Rust build products
+/NativeEngine/target/
