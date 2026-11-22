@@ -50,3 +50,6 @@
 "Bow stroke" = "Bow stroke";
 "Bow position (fingerboard to bridge)" = "Bow position (fingerboard to bridge)";
 "Expr." = "Expr.";
+"Bow speed" = "Bow speed";
+"Waveguide (experimental)" = "Waveguide (experimental)";
+"Waveguide for sustained bowing, starting with the next note." = "Waveguide for sustained bowing, starting with the next note.";

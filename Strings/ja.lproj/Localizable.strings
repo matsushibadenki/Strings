@@ -50,3 +50,6 @@
 "Bow stroke" = "弓元・弓先";
 "Bow position (fingerboard to bridge)" = "弦上の接点（指板側から駒側）";
 "Expr." = "表現";
+"Bow speed" = "弓速";
+"Waveguide (experimental)" = "ウェーブガイド（試験）";
+"Waveguide for sustained bowing, starting with the next note." = "次に弾く持続弓からウェーブガイドを使用します。";

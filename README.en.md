@@ -5,6 +5,9 @@ English · [日本語](README.md) · [简体中文](README.zh-Hans.md)
 Strings is a sample-free string instrument for macOS, iPhone, and iPad. It runs as a standalone SwiftUI app or as an AUv3 instrument in compatible DAWs. The Rust engine supports 32 voices and four articulations. The interface is available in English, Japanese, and Simplified Chinese.
 
 The [audio demo](docs/strings-demo.wav) plays bowed chords, pizzicato, legato, changes in bow position, and spiccato at different velocities.
+Compare legato [before](docs/audio/legato-before.wav) and [after](docs/audio/legato-after.wav) the change. Both files use the same phrase and settings with reverb off.
+Compare sustained bowing with the [additive engine](docs/audio/bowed-additive.wav) and the [experimental waveguide](docs/audio/bowed-waveguide.wav). Both WAVs use the same 8.11-second phrase with reverb off and matched average levels. At about 6 seconds, the bow pressure, speed, and contact point change during a held note. Enable **Waveguide (experimental)** using the waveform button on Mac or the sound controls on iPhone and iPad. The switch takes effect on the next sustained note.
+Compare body resonance [before](docs/audio/body-before.wav) and [after](docs/audio/body-after.wav). Both files use the same phrase and settings with reverb off. The phrase moves through the low, middle, and high registers, with a legato passage crossing registers at about six seconds.
 
 ## Screenshots
 

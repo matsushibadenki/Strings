@@ -4,7 +4,7 @@ import Synchronization
 /// The declaration order matches the Rust performance control array.
 enum PerformanceParameter: UInt32, CaseIterable {
     case expression, vibrato, bowBite, legatoTransition, bowPressure
-    case body, ensemble, volume, bowTravel, tuning
+    case body, ensemble, volume, bowTravel, tuning, bowSpeed
 
     var identifier: String {
         switch self {
@@ -18,6 +18,7 @@ enum PerformanceParameter: UInt32, CaseIterable {
         case .volume: "volume"
         case .bowTravel: "bowTravel"
         case .tuning: "tuning"
+        case .bowSpeed: "bowSpeed"
         }
     }
 
@@ -33,6 +34,7 @@ enum PerformanceParameter: UInt32, CaseIterable {
         case .volume: "Master volume"
         case .bowTravel: "Bow stroke position"
         case .tuning: "Master tuning"
+        case .bowSpeed: "Bow speed"
         }
     }
 

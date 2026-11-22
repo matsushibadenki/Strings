@@ -27,6 +27,10 @@ final class StringsModel {
         strings_dsp_all_off(handle)
     }
 
+    func setWaveguide(_ enabled: Bool) {
+        strings_dsp_set_waveguide(handle, enabled)
+    }
+
     func setSpiccato(_ enabled: Bool) {
         strings_dsp_set_spiccato(handle, enabled)
     }

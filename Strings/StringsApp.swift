@@ -47,6 +47,7 @@ struct StringsView: View {
         let saved = UserDefaults.standard.object(forKey: control.preferencesKey) as? NSNumber
         return (control, control.clamped(saved?.floatValue ?? control.defaultValue))
     })
+    @AppStorage("waveguide") private var waveguide = false
     @AppStorage("legato") private var legato = false
     @AppStorage("spiccato") private var spiccato = false
     @AppStorage("bowPositionPercent") private var bowPositionPercent = 75
@@ -114,6 +115,9 @@ struct StringsView: View {
         .onDisappear {
             midi.stop()
             audio.stop()
+        }
+        .onChange(of: waveguide, initial: true) { _, enabled in
+            audio.setWaveguide(enabled)
         }
         .onChange(of: bowArticulation.wrappedValue, initial: true) { _, value in
             audio.setBowArticulation(legato: value == .legato, spiccato: value == .spiccato)
@@ -183,6 +187,10 @@ struct StringsView: View {
     private var utilityControls: some View {
         HStack(spacing: 0) {
             pedalToggle("waveform.path", label: "Sustain pedal", isOn: sustainToggle)
+            #if os(macOS)
+            pedalToggle("waveform", label: "Waveguide (experimental)", isOn: $waveguide)
+                .help(Text("Waveguide for sustained bowing, starting with the next note."))
+            #endif
             #if os(iOS)
             iconButton("slider.horizontal.3", label: "Sound controls") { showSound.toggle() }
                 .popover(isPresented: $showSound) {
@@ -221,6 +229,8 @@ struct StringsView: View {
                 RotaryKnob(title: "Contact", label: "Bow position (fingerboard to bridge)",
                            value: percentBinding($bowPositionPercent), defaultValue: 75)
                 performanceKnob("Bow stroke", parameter: .bowTravel)
+                performanceKnob("Bow speed", parameter: .bowSpeed)
+                    .disabled(!waveguide || bowArticulation.wrappedValue != .sustained)
             }
         }
         .padding(.horizontal, 6)
@@ -308,6 +318,9 @@ struct StringsView: View {
         performanceSlider(.expression)
         performanceSlider(.vibrato)
         performanceSlider(.bowBite)
+        Toggle("Waveguide (experimental)", isOn: $waveguide)
+        performanceSlider(.bowSpeed)
+            .disabled(!waveguide || bowArticulation.wrappedValue != .sustained)
         performanceSlider(.bowPressure)
         performanceSlider(.legatoTransition)
         soundSlider("Bow position", percent: $bowPositionPercent)

@@ -21,6 +21,8 @@ final class StringsAudioUnit: AUAudioUnit {
     private let brightnessPercent = Atomic<Float>(45)
     private let bowPositionPercent = Atomic<Float>(75)
     private let legato = Atomic<Bool>(false)
+    fileprivate static let waveguideAddress: AUParameterAddress = 16
+    private let waveguide = Atomic<Bool>(false)
     private let spiccato = Atomic<Bool>(false)
     private let performance = PerformanceSettings()
 
@@ -51,6 +53,7 @@ final class StringsAudioUnit: AUAudioUnit {
             makeParameter("bowPosition", label: "Bow position", address: 2, initial: 75),
             makeParameter("legato", label: "Legato", address: 3, initial: 0, unit: .boolean),
             makeParameter("spiccato", label: "Spiccato", address: 4, initial: 0, unit: .boolean),
+            makeParameter("waveguide", label: "Waveguide (experimental)", address: Self.waveguideAddress, initial: 0, unit: .boolean),
         ]
         let addedParameters = PerformanceParameter.allCases.map { control in
             let parameter = AUParameterTree.createParameter(
@@ -74,6 +77,7 @@ final class StringsAudioUnit: AUAudioUnit {
             case 2: return self?.bowPositionPercent.load(ordering: .relaxed) ?? 75
             case 3: return self?.legato.load(ordering: .relaxed) == true ? 1 : 0
             case 4: return self?.spiccato.load(ordering: .relaxed) == true ? 1 : 0
+            case Self.waveguideAddress: return self?.waveguide.load(ordering: .relaxed) == true ? 1 : 0
             case 0: return self?.reverbPercent.load(ordering: .relaxed) ?? 30
             default:
                 guard let control = Self.performanceParameter(at: parameter.address) else { return 0 }
@@ -121,6 +125,7 @@ final class StringsAudioUnit: AUAudioUnit {
             renderer.model.setBowPosition(self.bowPositionPercent.load(ordering: .relaxed) / 100)
             renderer.model.setLegato(self.legato.load(ordering: .relaxed))
             renderer.model.setSpiccato(self.spiccato.load(ordering: .relaxed))
+            renderer.model.setWaveguide(self.waveguide.load(ordering: .relaxed))
             return renderer.render(frames: count, time: timestamp.pointee.mSampleTime, output: output,
                                    events: events, setParameter: self.setParameter)
         }
@@ -135,6 +140,7 @@ final class StringsAudioUnit: AUAudioUnit {
         case 2: bowPositionPercent.store(clamped, ordering: .relaxed)
         case 3: legato.store(percent >= 0.5, ordering: .relaxed)
         case 4: spiccato.store(percent >= 0.5, ordering: .relaxed)
+        case Self.waveguideAddress: waveguide.store(percent >= 0.5, ordering: .relaxed)
         default:
             if let control = Self.performanceParameter(at: address) { performance[control] = percent }
         }
@@ -223,6 +229,7 @@ private final class InstrumentRender {
                     case 2: model.setBowPosition(amount)
                     case 3: model.setLegato(parameter.value >= 0.5)
                     case 4: model.setSpiccato(parameter.value >= 0.5)
+                    case StringsAudioUnit.waveguideAddress: model.setWaveguide(parameter.value >= 0.5)
                     default:
                         if let control = StringsAudioUnit.performanceParameter(at: parameter.parameterAddress) {
                             model.setPerformance(control, value: parameter.value)

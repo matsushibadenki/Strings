@@ -1,6 +1,11 @@
 //! A sample-free string section with independent tuning and vibrato per desk.
 use std::f32::consts::TAU;
 
+mod body;
+mod waveguide;
+use body::BodyResonance;
+use waveguide::Waveguide;
+
 const VOICES: usize = 32;
 const PARTIALS: usize = 12;
 const BOW_POSITIONS: usize = 33;
@@ -11,7 +16,7 @@ const VIBRATO_DEPTH: [f32; 3] = [0.0027, 0.0038, 0.0031];
 const BOW_ENTRY_SECONDS: [f32; 3] = [0.004, 0.0, 0.009];
 
 // Matches the order of PerformanceParameter in Swift.
-const PERFORMANCE_DEFAULTS: [f32; 10] = [1.0, 1.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 0.5, 0.5];
+const PERFORMANCE_DEFAULTS: [f32; 11] = [1.0, 1.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5];
 
 struct BowPerformance {
     vibrato: f32,
@@ -50,8 +55,10 @@ struct Voice {
     phase: [f32; 3],
     vibrato: [f32; 3],
     variation: f32,
+    excitation: [f32; PARTIALS],
     weights: [f32; PARTIALS],
     partials: usize,
+    last_partial_gain: f32,
     attack: f32,
     natural_decay: f32,
     contact_time: f32,
@@ -75,8 +82,10 @@ impl Voice {
         phase: [0.0; 3],
         vibrato: [0.0; 3],
         variation: 0.0,
+        excitation: [0.0; PARTIALS],
         weights: [0.0; PARTIALS],
         partials: 0,
+        last_partial_gain: 0.0,
         attack: 0.0,
         natural_decay: 0.0,
         contact_time: 0.0,
@@ -116,7 +125,6 @@ impl Voice {
             peak: (0.19 + 0.81 * velocity.sqrt()) * peak,
             frequency,
             target_frequency: frequency,
-            partials: partial_count(frequency, rate),
             phase: [0.0, 0.21, 0.47],
             vibrato: [
                 0.16 + 0.13 * variation,
@@ -134,20 +142,31 @@ impl Voice {
             impact: 0.28 + 0.82 * velocity,
             ..Self::SILENT
         };
-        for (index, weight) in voice.weights.iter_mut().enumerate() {
+        for (index, excitation) in voice.excitation.iter_mut().enumerate() {
             let harmonic = (index + 1) as f32;
-            let hz = frequency * harmonic;
-            let bridge = 1.0 + 0.32 / (1.0 + ((hz - 2550.0) / 900.0).powi(2));
-            let excitation = if articulation == Articulation::Pizzicato {
+            *excitation = if articulation == Articulation::Pizzicato {
                 let position = 0.17 + 0.023 * variation;
                 (harmonic * position * std::f32::consts::PI).sin() / harmonic.powf(1.15)
             } else {
                 let phase = if index % 2 == 0 { 1.0 } else { -1.0 };
                 phase * (0.83 + 0.17 * velocity).powf(harmonic - 1.0) / harmonic.powf(0.84)
             };
-            *weight = excitation * bridge;
         }
+        voice.update_harmonics(rate);
         voice
+    }
+
+    fn update_harmonics(&mut self, rate: f32) {
+        self.partials = partial_count(self.frequency, rate);
+        for index in 0..self.partials {
+            let hz = self.frequency * (index + 1) as f32;
+            let bridge = 1.0 + 0.32 / (1.0 + ((hz - 2550.0) / 900.0).powi(2));
+            self.weights[index] = self.excitation[index] * bridge;
+        }
+        // Fade the final partial before it crosses the cutoff during a glide.
+        let highest = self.frequency * self.partials as f32 / rate;
+        let fade = ((0.46 - highest) / 0.03).clamp(0.0, 1.0);
+        self.last_partial_gain = fade * fade * (3.0 - 2.0 * fade);
     }
 
     fn retune(&mut self, note: u32, rate: f32, transition: f32) {
@@ -155,6 +174,49 @@ impl Voice {
         self.target_frequency = note_frequency(note);
         self.glide_frames = (rate * (0.004 + 0.048 * transition * transition)).round() as u32;
         self.glide_step = (self.target_frequency - self.frequency) / self.glide_frames as f32;
+    }
+
+    fn sample_waveguide(
+        &mut self,
+        guide: &mut Waveguide,
+        rate: f32,
+        fast_release: f32,
+        brightness: f32,
+        speed: f32,
+        contact: f32,
+        performance: &BowPerformance,
+    ) -> [f32; 2] {
+        let inverse_rate = rate.recip();
+        self.age += inverse_rate;
+        let driving = self.gate != Gate::Released;
+        if driving {
+            self.level += (self.peak - self.level) * self.attack;
+        } else {
+            self.level *= fast_release;
+        }
+        let vibrato = (self.vibrato[1] * TAU).sin();
+        self.vibrato[1] += VIBRATO_HZ[1] * inverse_rate;
+        self.vibrato[1] -= self.vibrato[1].trunc();
+        let vibrato_entry = ((self.age - 0.065) * 3.3).clamp(0.0, 1.0);
+        let modulation = 1.0 + vibrato * vibrato_entry * VIBRATO_DEPTH[1] * performance.vibrato;
+        let frequency = self.frequency * performance.tuning_ratio * modulation;
+        let acceleration = 1.0 + (self.age * 75.0).min(1.0) * (1.0 + performance.bite) * 3.0;
+        let bow_velocity = if driving {
+            (0.72 * speed) * (1.0 - acceleration.recip()) * (0.85 + 0.30 * self.impact)
+        } else {
+            0.0
+        };
+        let pressure = if driving { performance.pressure } else { 0.0 };
+        let signal = guide.sample(
+            rate / frequency,
+            contact,
+            bow_velocity,
+            pressure,
+            brightness,
+            inverse_rate,
+        );
+        let out = signal * self.level * 1.35;
+        [out, out]
     }
 
     fn active(&self) -> bool {
@@ -180,7 +242,7 @@ impl Voice {
             } else {
                 self.frequency + self.glide_step
             };
-            self.partials = partial_count(self.frequency, inverse_rate.recip());
+            self.update_harmonics(inverse_rate.recip());
         }
         if self.gate == Gate::Released {
             self.level *= fast_release;
@@ -228,6 +290,9 @@ impl Voice {
             let contact = if pizzicato { 1.0 } else { bow[index] };
             amplitudes[index] = self.weights[index] * contact * falloff;
             falloff *= tilt;
+        }
+        if self.partials > 0 {
+            amplitudes[self.partials - 1] *= self.last_partial_gain;
         }
         let mut out = [0.0; 2];
         let desks = if pizzicato { 1..2 } else { 0..3 };
@@ -315,38 +380,6 @@ fn smoothing(rate: f32, seconds: f32) -> f32 {
     1.0 - (-1.0 / (rate * seconds)).exp()
 }
 
-/// A unity-peak bandpass, added in parallel to the direct string signal.
-struct BodyMode {
-    gain: f32,
-    b0: f32,
-    a1: f32,
-    a2: f32,
-    state: [f32; 2],
-}
-
-impl BodyMode {
-    fn new(rate: f32, frequency: f32, q: f32, gain: f32) -> Self {
-        let (sine, cosine) = (TAU * frequency / rate).sin_cos();
-        let alpha = sine / (2.0 * q);
-        let a0 = 1.0 + alpha;
-        Self {
-            gain,
-            b0: alpha / a0,
-            a1: -2.0 * cosine / a0,
-            a2: (1.0 - alpha) / a0,
-            state: [0.0; 2],
-        }
-    }
-
-    fn sample(&mut self, input: f32) -> f32 {
-        let feed = self.b0 * input;
-        let output = feed + self.state[0];
-        self.state[0] = self.state[1] - self.a1 * output;
-        self.state[1] = -feed - self.a2 * output;
-        self.gain * output
-    }
-}
-
 struct Delay {
     samples: Vec<f32>,
     index: usize,
@@ -384,6 +417,8 @@ impl Delay {
 
 pub struct StringsDSP {
     voices: [Voice; VOICES],
+    waveguides: [Waveguide; VOICES],
+    waveguide_enabled: bool,
     rate: f32,
     sustain: bool,
     legato: bool,
@@ -404,7 +439,7 @@ pub struct StringsDSP {
     fast_release: f32,
     room_damping: f32,
     room: [Delay; 4],
-    body: [[BodyMode; 6]; 2],
+    body: BodyResonance,
     performance: [f32; PERFORMANCE_DEFAULTS.len()],
     performance_targets: [f32; PERFORMANCE_DEFAULTS.len()],
     strike: u32,
@@ -420,6 +455,12 @@ impl StringsDSP {
         };
         Self {
             voices: [Voice::SILENT; VOICES],
+            waveguides: {
+                let minimum_pitch = note_frequency(0) * 430.0 / 440.0 * 0.995;
+                let length = ((rate / minimum_pitch).ceil() as usize + 2).next_power_of_two();
+                std::array::from_fn(|_| Waveguide::new(length))
+            },
+            waveguide_enabled: false,
             rate,
             sustain: false,
             legato: false,
@@ -443,18 +484,7 @@ impl StringsDSP {
             fast_release: 1.0 - smoothing(rate, 0.009),
             room_damping: smoothing(rate, 0.00013),
             room: [0.0271, 0.0337, 0.0419, 0.0533].map(|seconds| Delay::new(rate, seconds)),
-            body: [0.96, 1.04].map(|spread| {
-                // Broad, hand-tuned modes spanning low strings and upper-string radiation.
-                [
-                    (119.0, 3.0, 0.32),
-                    (238.0, 3.8, 0.40),
-                    (460.0, 4.4, 0.52),
-                    (710.0, 4.0, 0.24),
-                    (1530.0, 2.1, -0.16),
-                    (2800.0, 1.6, 0.37),
-                ]
-                .map(|(hz, q, gain)| BodyMode::new(rate, hz * spread, q, gain))
-            }),
+            body: BodyResonance::new(rate),
             performance: PERFORMANCE_DEFAULTS,
             performance_targets: PERFORMANCE_DEFAULTS,
             strike: 0,
@@ -521,6 +551,8 @@ impl StringsDSP {
         let seed = self.strike.wrapping_mul(0x9e37_79b9) ^ note.wrapping_mul(0x85eb_ca6b);
         let variation = ((seed >> 16) as f32 / 32767.5) - 1.0;
         self.voices[slot] = Voice::new(note, velocity.min(1.0), articulation, self.rate, variation);
+        self.waveguides[slot]
+            .start(self.waveguide_enabled && articulation == Articulation::Bowed && !is_legato);
     }
 
     fn remove_legato_key(&mut self, note: u32) {
@@ -593,9 +625,7 @@ impl StringsDSP {
         for delay in &mut self.room {
             delay.clear();
         }
-        for mode in self.body.iter_mut().flatten() {
-            mode.state = [0.0; 2];
-        }
+        self.body.clear();
     }
 
     fn render_frame(&mut self) -> [f32; 2] {
@@ -615,7 +645,7 @@ impl StringsDSP {
         for (value, target) in self.performance.iter_mut().zip(self.performance_targets) {
             *value += (target - *value) * self.control_smoothing;
         }
-        let [expression, vibrato, bite, _, pressure, body_mix, spread, volume, travel, tuning] =
+        let [expression, vibrato, bite, _, pressure, body_mix, spread, volume, travel, tuning, speed] =
             self.performance;
         let performance = BowPerformance {
             vibrato,
@@ -627,11 +657,13 @@ impl StringsDSP {
         };
 
         let mut mix = [0.0; 2];
+        let mut body_inputs = [[0.0; 2]; 3];
         let inverse_rate = self.rate.recip();
         let expression = expression * self.expression;
         let bow_gain = expression * expression;
         let bow_brightness = self.brightness * (0.68 + 0.32 * expression);
-        for voice in &mut self.voices {
+        let contact = 0.30 - 0.265 * self.bow_position;
+        for (voice, guide) in self.voices.iter_mut().zip(&mut self.waveguides) {
             if voice.active() {
                 self.noise ^= self.noise << 13;
                 self.noise ^= self.noise >> 17;
@@ -642,16 +674,35 @@ impl StringsDSP {
                 } else {
                     (bow_brightness, bow_gain)
                 };
-                let [left, right] = voice.sample(
-                    inverse_rate,
-                    brightness,
-                    self.fast_release,
-                    noise,
-                    &bow,
-                    &performance,
-                );
-                mix[0] += left * gain;
-                mix[1] += right * gain;
+                let [left, right] = if guide.active {
+                    voice.sample_waveguide(
+                        guide,
+                        self.rate,
+                        self.fast_release,
+                        brightness,
+                        speed,
+                        contact,
+                        &performance,
+                    )
+                } else {
+                    voice.sample(
+                        inverse_rate,
+                        brightness,
+                        self.fast_release,
+                        noise,
+                        &bow,
+                        &performance,
+                    )
+                };
+                let [left, right] = [left * gain, right * gain];
+                mix[0] += left;
+                mix[1] += right;
+                // Use the live frequency after stepping any legato pitch glide.
+                let weights = BodyResonance::weights(voice.frequency * performance.tuning_ratio);
+                for (input, weight) in body_inputs.iter_mut().zip(weights) {
+                    input[0] += left * weight;
+                    input[1] += right * weight;
+                }
             }
         }
 
@@ -659,8 +710,7 @@ impl StringsDSP {
             .room
             .each_mut()
             .map(|delay| delay.tap(self.room_damping));
-        for (direct, modes) in mix.iter_mut().zip(&mut self.body) {
-            let body: f32 = modes.iter_mut().map(|mode| mode.sample(*direct)).sum();
+        for (direct, body) in mix.iter_mut().zip(self.body.render(body_inputs)) {
             *direct += body * body_mix;
         }
         let [left, right] = mix;
@@ -726,6 +776,11 @@ pub unsafe extern "C" fn strings_dsp_set_legato(dsp: *mut StringsDSP, enabled: b
 #[no_mangle]
 pub unsafe extern "C" fn strings_dsp_set_spiccato(dsp: *mut StringsDSP, enabled: bool) {
     (*dsp).set_spiccato(enabled);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn strings_dsp_set_waveguide(dsp: *mut StringsDSP, enabled: bool) {
+    (*dsp).waveguide_enabled = enabled;
 }
 
 #[no_mangle]
@@ -806,6 +861,55 @@ mod tests {
     }
 
     #[test]
+    fn legato_harmonics_follow_instantaneous_pitch_even_when_redirected() {
+        let rate = 48_000.0;
+        let mut dsp = StringsDSP::new(f64::from(rate));
+        dsp.set_legato(true);
+        dsp.note_on(48, 0.8, false);
+        for _ in 0..4800 {
+            dsp.render_frame();
+        }
+        let slot = dsp.legato_voice.unwrap();
+        let start = dsp.voices[slot];
+        dsp.note_on(79, 0.65, false);
+        assert_eq!(dsp.voices[slot].weights, start.weights);
+        for _ in 0..384 {
+            dsp.render_frame();
+        }
+        let midpoint = dsp.voices[slot];
+        assert_ne!(midpoint.weights[4], start.weights[4]);
+        assert!(midpoint.age > start.age && midpoint.level >= start.level);
+        let expected = Voice::new(79, 0.8, Articulation::Bowed, rate, 0.0);
+        assert_ne!(midpoint.weights[4], expected.weights[4]);
+
+        dsp.note_on(60, 0.7, false);
+        assert_eq!(dsp.voices[slot].weights, midpoint.weights);
+        assert_eq!(dsp.voices[slot].phase, midpoint.phase);
+        assert_eq!(dsp.voices[slot].level, midpoint.level);
+        for _ in 0..768 {
+            dsp.render_frame();
+        }
+        let expected = Voice::new(60, 0.8, Articulation::Bowed, rate, 0.0);
+        assert_eq!(dsp.voices[slot].weights, expected.weights);
+        assert_eq!(dsp.voices.iter().filter(|voice| voice.active()).count(), 1);
+    }
+
+    #[test]
+    fn a_partial_fades_before_crossing_the_band_limit() {
+        let rate = 44_100.0;
+        let mut voice = Voice::new(96, 0.8, Articulation::Bowed, rate, 0.0);
+        voice.frequency = 0.4599 * rate / 4.0;
+        voice.update_harmonics(rate);
+        assert_eq!(voice.partials, 4);
+        assert!(voice.last_partial_gain < 0.0001);
+
+        voice.frequency = 0.4601 * rate / 4.0;
+        voice.update_harmonics(rate);
+        assert_eq!(voice.partials, 3);
+        assert_eq!(voice.last_partial_gain, 1.0);
+    }
+
+    #[test]
     fn legato_requires_overlap_and_pizzicato_keeps_independent_voices() {
         let mut dsp = StringsDSP::new(48_000.0);
         dsp.set_legato(true);
@@ -870,8 +974,88 @@ mod tests {
     }
 
     #[test]
+    fn waveguide_responds_to_pressure_speed_and_contact() {
+        let render = |pressure, speed, contact| {
+            let mut dsp = StringsDSP::new(48_000.0);
+            dsp.waveguide_enabled = true;
+            dsp.performance[4] = pressure;
+            dsp.performance_targets[4] = pressure;
+            dsp.performance[10] = speed;
+            dsp.performance_targets[10] = speed;
+            dsp.bow_position = contact;
+            dsp.bow_target = contact;
+            dsp.note_on(62, 0.8, false);
+            (0..12_000)
+                .map(|_| dsp.render_frame()[0])
+                .collect::<Vec<_>>()
+        };
+        let reference = render(0.5, 0.5, 0.75);
+        assert!(reference.iter().any(|x| x.abs() > 0.04));
+        for (pressure, speed, contact) in [(0.25, 0.5, 0.75), (0.5, 0.8, 0.75), (0.5, 0.5, 0.2)] {
+            let comparison = render(pressure, speed, contact);
+            let difference = reference
+                .iter()
+                .zip(comparison)
+                .map(|(a, b)| (a - b).abs())
+                .sum::<f32>();
+            assert!(difference > 1.0);
+        }
+        for silent in [render(0.0, 0.5, 0.75), render(0.5, 0.0, 0.75)] {
+            assert!(silent.into_iter().all(|sample| sample == 0.0));
+        }
+    }
+
+    #[test]
+    fn waveguide_switch_preserves_other_articulations() {
+        for (pizzicato, spiccato, legato) in [
+            (true, false, false),
+            (false, true, false),
+            (false, false, true),
+        ] {
+            let make = |enabled| {
+                let mut dsp = StringsDSP::new(48_000.0);
+                dsp.waveguide_enabled = enabled;
+                dsp.set_spiccato(spiccato);
+                dsp.set_legato(legato);
+                dsp.note_on(60, 0.8, pizzicato);
+                dsp
+            };
+            let mut legacy = make(false);
+            let mut experimental = make(true);
+            for _ in 0..4800 {
+                assert_eq!(experimental.render_frame(), legacy.render_frame());
+            }
+        }
+    }
+
+    #[test]
+    fn waveguide_handles_polyphony_and_clears_after_stop() {
+        for rate in [44_100.0, 48_000.0, 96_000.0] {
+            let mut dsp = StringsDSP::new(rate);
+            dsp.waveguide_enabled = true;
+            for note in (0..16).chain(112..128) {
+                dsp.note_on(note, 0.8, false);
+            }
+            assert_eq!(
+                dsp.waveguides.iter().filter(|guide| guide.active).count(),
+                VOICES
+            );
+            for _ in 0..4096 {
+                assert!(dsp.render_frame().into_iter().all(f32::is_finite));
+            }
+            dsp.all_off();
+            assert_eq!(dsp.render_frame(), [0.0, 0.0]);
+            dsp.note_on(62, 0.5, false);
+            assert_eq!(
+                dsp.waveguides[0].sample(160.0, 0.1, 0.0, 0.0, 0.5, (rate as f32).recip()),
+                0.0
+            );
+        }
+    }
+
+    #[test]
     fn performance_controls_change_the_rendered_signal() {
-        for (index, default) in PERFORMANCE_DEFAULTS.iter().enumerate() {
+        for (index, default) in PERFORMANCE_DEFAULTS[..10].iter().enumerate() {
             let render = |value| {
                 let mut dsp = StringsDSP::new(48_000.0);
                 dsp.set_legato(true);

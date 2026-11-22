@@ -5,6 +5,9 @@
 Strings 是一款适用于 macOS、iPhone 和 iPad 的弦乐音源。它既能作为独立的 SwiftUI 应用运行，也能在兼容的 DAW 中作为 AUv3 乐器使用。Rust 合成引擎无需录音采样，支持 32 音复音和四种奏法。界面支持英语、日语和简体中文。
 
 [音频示例](docs/strings-demo.wav) 依次展示弓奏和弦、拨奏、连奏、弓弦接触点的变化，以及不同力度的跳弓。
+连奏试听对比：[改进前](docs/audio/legato-before.wav)与[改进后](docs/audio/legato-after.wav)。两段使用相同的乐句和音色设置，均关闭混响。
+持续弓奏试听对比：[现有加法合成](docs/audio/bowed-additive.wav)与[实验波导](docs/audio/bowed-waveguide.wav)。两段使用相同的 8.11 秒乐句，关闭混响并匹配平均电平。约 6 秒起，在保持同一音符时改变弓压、弓速和接触点。可在 Mac 的波形按钮或 iPhone、iPad 的音色设置中启用**波导（实验）**，从下一个持续弓奏音符起生效。
+可试听[改进前](docs/audio/body-before.wav)和[改进后](docs/audio/body-after.wav)的琴体共鸣。两段使用同一乐句和音色设置，并关闭混响。乐句依次经过低、中、高音区，约六秒时开始跨音区连奏。
 
 ## 截图
 

@@ -12,6 +12,7 @@ void strings_dsp_note_on(StringsDSP * _Nonnull strings, uint32_t note, float vel
 void strings_dsp_note_off(StringsDSP * _Nonnull strings, uint32_t note);
 void strings_dsp_sustain(StringsDSP * _Nonnull strings, float position);
 void strings_dsp_all_off(StringsDSP * _Nonnull strings);
+void strings_dsp_set_waveguide(StringsDSP * _Nonnull strings, bool enabled);
 void strings_dsp_set_spiccato(StringsDSP * _Nonnull strings, bool enabled);
 void strings_dsp_set_legato(StringsDSP * _Nonnull strings, bool enabled);
 void strings_dsp_set_bow_position(StringsDSP * _Nonnull strings, float position);

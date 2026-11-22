@@ -50,3 +50,6 @@
 "Bow stroke" = "弓段";
 "Bow position (fingerboard to bridge)" = "弦上接触点（指板侧至琴码侧）";
 "Expr." = "表情";
+"Bow speed" = "弓速";
+"Waveguide (experimental)" = "波导（实验）";
+"Waveguide for sustained bowing, starting with the next note." = "从下一次持续弓奏开始使用波导。";
