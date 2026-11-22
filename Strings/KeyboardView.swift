@@ -16,16 +16,23 @@ struct KeyboardLayout {
         let boundary: Int
     }
 
+    private static let naturals = (21...108).filter { [0, 2, 4, 5, 7, 9, 11].contains($0 % 12) }
+    static let full = KeyboardLayout(white: naturals)
+
     let white: [Int]
     let black: [Accidental]
 
     init(octave: Int, whiteCount: Int) {
-        let naturals = (21...108).filter { [0, 2, 4, 5, 7, 9, 11].contains($0 % 12) }
+        let naturals = Self.naturals
         let requested = naturals.firstIndex { $0 >= (octave + 1) * 12 } ?? 0
         let start = octave == 0 ? 0 : requested
         let end = min(naturals.count, start + whiteCount + (octave == 0 ? 2 : 0)
                       + (octave == (whiteCount == 14 ? 6 : 7) ? 1 : 0))
-        white = Array(naturals[start..<end])
+        self.init(white: Array(naturals[start..<end]))
+    }
+
+    private init(white: [Int]) {
+        self.white = white
         black = zip(white, white.dropFirst()).enumerated().compactMap { index, pair in
             pair.1 - pair.0 == 2 ? Accidental(note: pair.0 + 1, boundary: index + 1) : nil
         }
@@ -46,9 +53,11 @@ struct KeyboardLayout {
 }
 
 struct KeyboardView: View {
+    @Environment(\.displayScale) private var displayScale
     let layout: KeyboardLayout
     let pressed: Set<Int>
     let showLabels: Bool
+    var miniature = false
     let onTouches: (Set<Int>) -> Void
     let onAccessibilityPlay: (Int) -> Void
 
@@ -58,13 +67,14 @@ struct KeyboardView: View {
             ZStack(alignment: .topLeading) {
                 HStack(spacing: 0) {
                     ForEach(layout.white, id: \.self) { note in
-                        key(note, black: false)
+                        key(note, black: false, labelVisible: showLabels && (!miniature || (step >= 15 && note % 12 == 0)))
                             .frame(width: step, height: proxy.size.height)
                     }
                 }
+                whiteKeySeparators(step: step)
                 ForEach(layout.black, id: \.note) { accidental in
                     let rect = layout.blackFrame(accidental, size: proxy.size)
-                    key(accidental.note, black: true)
+                    key(accidental.note, black: true, labelVisible: false)
                         .frame(width: rect.width, height: rect.height)
                         .offset(x: rect.minX)
                 }
@@ -78,24 +88,40 @@ struct KeyboardView: View {
         }
     }
 
-    private func key(_ note: Int, black: Bool) -> some View {
+    private func whiteKeySeparators(step: CGFloat) -> some View {
+        let scale = max(1, displayScale)
+        let width = scale.rounded(.up) / scale
+        return Canvas { context, size in
+            var separators = Path()
+            for index in 1..<layout.white.count {
+                let center = CGFloat(index) * step
+                let left = ((center - width / 2) * scale).rounded() / scale
+                separators.addRect(CGRect(x: left, y: 0, width: width, height: size.height))
+            }
+            context.fill(separators, with: .color(Color(white: 0.12)))
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func key(_ note: Int, black: Bool, labelVisible: Bool) -> some View {
         let down = pressed.contains(note)
         let accent = Color(red: 0.68, green: 0.60, blue: 0.94)
-        return UnevenRoundedRectangle(bottomLeadingRadius: black ? 5 : 7, bottomTrailingRadius: black ? 5 : 7)
+        let radius: CGFloat = miniature ? (black ? 2 : 3) : (black ? 5 : 7)
+        return UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius)
             .fill(LinearGradient(
                 colors: down ? [accent.opacity(0.75), accent] : black
                     ? [Color(white: 0.11), Color(white: 0.23)]
                     : [Color(red: 0.85, green: 0.82, blue: 0.76), Color(red: 0.99, green: 0.97, blue: 0.92)],
                 startPoint: .top, endPoint: .bottom
             ))
-            .padding(.horizontal, black ? 0 : 0.6)
             .shadow(color: .black.opacity(black ? 0.4 : 0), radius: 3, y: 3)
             .overlay(alignment: .bottom) {
-                if showLabels && !black {
+                if labelVisible {
                     Text(verbatim: noteName(note))
                         .font(.caption2.monospaced().weight(note % 12 == 0 ? .bold : .regular))
                         .foregroundStyle(Color(white: 0.28))
-                        .padding(.bottom, 13)
+                        .padding(.bottom, miniature ? 7 : 13)
                 }
             }
             .accessibilityElement(children: .ignore)

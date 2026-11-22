@@ -18,12 +18,15 @@
 		459929B7FEE2FA27A63A48E1 /* StringsAU-iOS.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 898F341330C286B9FD370034 /* StringsAU-iOS.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		46D1DC1596927785E9358B26 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = C2BAA0A88C0C2DE20D6817C4 /* Localizable.strings */; };
 		51809F78F86B384E61739ACE /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = C2BAA0A88C0C2DE20D6817C4 /* Localizable.strings */; };
+		66F832A246C68D93501D518D /* PerformanceParameter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F97FEEB1C8DFBD75CC6E03 /* PerformanceParameter.swift */; };
 		675C1C8D8745778453FE61BA /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 7AB28F0C6C51B8FD52E7E7FB /* InfoPlist.strings */; };
 		6C2DED47E47A37C37665721D /* StringsMIDI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3432CB5F1C8BA639553AE14D /* StringsMIDI.swift */; };
+		79C3153B36A5B71DE2981F4C /* PerformanceParameter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F97FEEB1C8DFBD75CC6E03 /* PerformanceParameter.swift */; };
 		838966E84E29B6AFB4B82D59 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = C2BAA0A88C0C2DE20D6817C4 /* Localizable.strings */; };
 		856F7D3B3C01FABB02ACBC0A /* StringsMIDI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3432CB5F1C8BA639553AE14D /* StringsMIDI.swift */; };
 		9386D142B05828501941D6D6 /* StringsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00F5000E85726892F513AE0 /* StringsApp.swift */; };
 		9B6A3FC9D8DE5E73962F6380 /* StringsAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACEDA624FD00F906FF9E3730 /* StringsAudioUnit.swift */; };
+		9D47CACEE9F75D3338BDB296 /* PerformanceParameter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F97FEEB1C8DFBD75CC6E03 /* PerformanceParameter.swift */; };
 		9E02FB09A59919C75606B9BD /* MIDIInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3B2D43A286C69052A9C2C32 /* MIDIInput.swift */; };
 		A19610214947CAA5740CE757 /* StringsMIDI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3432CB5F1C8BA639553AE14D /* StringsMIDI.swift */; };
 		A2B73F45A6E33EBE10359743 /* StringsAU-macOS.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 8A9A5F27082F3F9CFB718469 /* StringsAU-macOS.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -35,6 +38,7 @@
 		E2720D198455EB9C802DCA47 /* StringsAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF460F2363DAEEBDD7D3227 /* StringsAudio.swift */; };
 		E41531918AB0BA31A0C8F504 /* StringsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00F5000E85726892F513AE0 /* StringsApp.swift */; };
 		F54B84648C0476232AE496F8 /* KeyboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DFF1205E41220D7A3B02C7C /* KeyboardView.swift */; };
+		F9E334B19E9CB3DCFE55C710 /* PerformanceParameter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F97FEEB1C8DFBD75CC6E03 /* PerformanceParameter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -81,6 +85,7 @@
 
 /* Begin PBXFileReference section */
 		00D05D03E4D93702393A948D /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		04F97FEEB1C8DFBD75CC6E03 /* PerformanceParameter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceParameter.swift; sourceTree = "<group>"; };
 		05459B652D8AF4991827D2BC /* Strings.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Strings.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0DFF1205E41220D7A3B02C7C /* KeyboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardView.swift; sourceTree = "<group>"; };
 		3432CB5F1C8BA639553AE14D /* StringsMIDI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StringsMIDI.swift; sourceTree = "<group>"; };
@@ -133,6 +138,7 @@
 			children = (
 				0DFF1205E41220D7A3B02C7C /* KeyboardView.swift */,
 				E3B2D43A286C69052A9C2C32 /* MIDIInput.swift */,
+				04F97FEEB1C8DFBD75CC6E03 /* PerformanceParameter.swift */,
 				C00F5000E85726892F513AE0 /* StringsApp.swift */,
 				CEF460F2363DAEEBDD7D3227 /* StringsAudio.swift */,
 				3432CB5F1C8BA639553AE14D /* StringsMIDI.swift */,
@@ -390,6 +396,7 @@
 			files = (
 				DD280FCA0261715073CE741B /* KeyboardView.swift in Sources */,
 				A45572EB378C1B4DA3F04522 /* MIDIInput.swift in Sources */,
+				66F832A246C68D93501D518D /* PerformanceParameter.swift in Sources */,
 				9386D142B05828501941D6D6 /* StringsApp.swift in Sources */,
 				449F2CE964A7F09CEB89991D /* StringsAudio.swift in Sources */,
 				12D99022BBCEE802C3CB4BA9 /* StringsMIDI.swift in Sources */,
@@ -403,6 +410,7 @@
 			files = (
 				F54B84648C0476232AE496F8 /* KeyboardView.swift in Sources */,
 				9E02FB09A59919C75606B9BD /* MIDIInput.swift in Sources */,
+				9D47CACEE9F75D3338BDB296 /* PerformanceParameter.swift in Sources */,
 				E41531918AB0BA31A0C8F504 /* StringsApp.swift in Sources */,
 				E2720D198455EB9C802DCA47 /* StringsAudio.swift in Sources */,
 				856F7D3B3C01FABB02ACBC0A /* StringsMIDI.swift in Sources */,
@@ -414,6 +422,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				79C3153B36A5B71DE2981F4C /* PerformanceParameter.swift in Sources */,
 				CE5A12C3E58E004068F2C0BF /* StringsAudioUnit.swift in Sources */,
 				A19610214947CAA5740CE757 /* StringsMIDI.swift in Sources */,
 				1809CEBFB63E135B050B5517 /* StringsModel.swift in Sources */,
@@ -424,6 +433,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F9E334B19E9CB3DCFE55C710 /* PerformanceParameter.swift in Sources */,
 				9B6A3FC9D8DE5E73962F6380 /* StringsAudioUnit.swift in Sources */,
 				6C2DED47E47A37C37665721D /* StringsMIDI.swift in Sources */,
 				16DE4899CE84EF2D632785EA /* StringsModel.swift in Sources */,

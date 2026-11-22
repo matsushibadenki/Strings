@@ -18,6 +18,7 @@ void strings_dsp_set_bow_position(StringsDSP * _Nonnull strings, float position)
 void strings_dsp_set_brightness(StringsDSP * _Nonnull strings, float amount);
 void strings_dsp_set_expression(StringsDSP * _Nonnull strings, float amount);
 void strings_dsp_set_reverb(StringsDSP * _Nonnull strings, float amount);
+void strings_dsp_set_performance(StringsDSP * _Nonnull strings, uint32_t index, float value);
 void strings_dsp_render(StringsDSP * _Nonnull strings, float * _Nonnull left,
                      float * _Nonnull right, uint32_t frames);
 

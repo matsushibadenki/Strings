@@ -1,15 +1,21 @@
 import CoreMIDI
 import SwiftUI
 
+#if os(macOS)
+private let instrumentHeight: CGFloat = 370
+#endif
+
 @main
 struct StringsApp: App {
     var body: some Scene {
         #if os(macOS)
-        Window("Strings", id: "instrument") {
+        Window("", id: "instrument") {
             StringsView()
-                .frame(minWidth: 560, minHeight: 360)
+                .frame(minWidth: 560)
+                .frame(height: instrumentHeight)
         }
-        .defaultSize(width: 900, height: 650)
+        .defaultSize(width: 900, height: instrumentHeight)
+        .windowResizability(.contentSize)
         #else
         WindowGroup { StringsView() }
         #endif
@@ -36,6 +42,11 @@ struct StringsView: View {
     @State private var accessibilityNotes: [Int: UUID] = [:]
     @State private var info = false
     @State private var showSound = false
+    @State private var soundSection = SoundSection.bow
+    @State private var performanceValues = Dictionary(uniqueKeysWithValues: PerformanceParameter.allCases.map { control in
+        let saved = UserDefaults.standard.object(forKey: control.preferencesKey) as? NSNumber
+        return (control, control.clamped(saved?.floatValue ?? control.defaultValue))
+    })
     @AppStorage("legato") private var legato = false
     @AppStorage("spiccato") private var spiccato = false
     @AppStorage("bowPositionPercent") private var bowPositionPercent = 75
@@ -46,28 +57,34 @@ struct StringsView: View {
 
     private let accent = Color(red: 0.81, green: 0.77, blue: 1)
 
-    private let playingHelp: LocalizedStringKey = "Play chords on the keyboard or connect a MIDI controller. Switch to pizzicato to pluck the next notes. Adjust brightness and room reverb in sound controls."
+    private let playingHelp: LocalizedStringKey = "Play chords on the keyboard or connect a MIDI controller. Switch to pizzicato to pluck the next notes."
 
     var body: some View {
         GeometryReader { proxy in
+            #if os(macOS)
+            VStack(alignment: .leading, spacing: 10) {
+                instrumentKnobs
+                controls
+                keyboard(.full, labels: true, miniature: true)
+                    .frame(height: 108)
+                    .id(keyboardGeneration)
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
+            #else
             let wide = proxy.size.width >= 580
             let compact = proxy.size.height < 450
             VStack(spacing: compact ? 12 : 24) {
-                header
-                if audio.unavailable {
-                    Button("Retry audio", systemImage: "speaker.slash") { audio.start() }
-                        .font(.callout)
+                HStack {
+                    Spacer()
+                    utilityControls
                 }
+                audioRetry
                 controls
-                KeyboardView(
-                    layout: KeyboardLayout(octave: octave, whiteCount: wide ? 14 : 7),
-                    pressed: touches.union(accessibilityNotes.keys).union(midiKeys.map(\.note)),
-                    showLabels: !compact,
-                    onTouches: updateTouches,
-                    onAccessibilityPlay: playAccessibleNote
-                )
-                .frame(maxHeight: 460)
-                .id(KeyWindow(octave: octave, wide: wide, generation: keyboardGeneration))
+                keyboard(KeyboardLayout(octave: octave, whiteCount: wide ? 14 : 7), labels: !compact)
+                    .frame(maxHeight: 460)
+                    .id(KeyWindow(octave: octave, wide: wide, generation: keyboardGeneration))
             }
             .frame(maxHeight: .infinity)
             .padding(.horizontal, 16)
@@ -77,6 +94,7 @@ struct StringsView: View {
                 visibleNotes = newValue ? 14 : 7
                 octave = min(octave, maximumOctave)
             }
+            #endif
         }
         .background {
             LinearGradient(colors: [Color(red: 0.16, green: 0.13, blue: 0.22), Color(red: 0.075, green: 0.065, blue: 0.10)],
@@ -87,6 +105,9 @@ struct StringsView: View {
         .tint(accent)
         .task {
             guard playsAudio else { return }
+            for (parameter, value) in performanceValues {
+                audio.setPerformance(parameter, value: value)
+            }
             midi.start(receive: receiveMIDI, disconnected: disconnectMIDI)
             if phase == .active { audio.start() }
         }
@@ -140,30 +161,96 @@ struct StringsView: View {
         }
     }
 
-    private var header: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("String Ensemble")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(accent)
-                Text("Strings")
-                    .font(.system(.largeTitle, design: .serif, weight: .semibold))
-                    .accessibilityAddTraits(.isHeader)
-            }
-            Spacer()
-            HStack(spacing: 0) {
-                pedalToggle("waveform.path", label: "Sustain pedal", isOn: sustainToggle)
-                iconButton("slider.horizontal.3", label: "Sound controls") { showSound.toggle() }
-                    .popover(isPresented: $showSound) {
-                        soundControls
-                        #if os(iOS)
-                            .presentationCompactAdaptation(.popover)
-                        #endif
-                    }
-                iconButton("info.circle", label: "Playing Strings", help: playingHelp) { info = true }
-            }
+    @ViewBuilder
+    private var audioRetry: some View {
+        if audio.unavailable {
+            Button("Retry audio", systemImage: "speaker.slash") { audio.start() }
+                .font(.callout)
         }
     }
+
+    private func keyboard(_ layout: KeyboardLayout, labels: Bool, miniature: Bool = false) -> some View {
+        KeyboardView(
+            layout: layout,
+            pressed: touches.union(accessibilityNotes.keys).union(midiKeys.map(\.note)),
+            showLabels: labels,
+            miniature: miniature,
+            onTouches: updateTouches,
+            onAccessibilityPlay: playAccessibleNote
+        )
+    }
+
+    private var utilityControls: some View {
+        HStack(spacing: 0) {
+            pedalToggle("waveform.path", label: "Sustain pedal", isOn: sustainToggle)
+            #if os(iOS)
+            iconButton("slider.horizontal.3", label: "Sound controls") { showSound.toggle() }
+                .popover(isPresented: $showSound) {
+                    soundControls
+                        .presentationCompactAdaptation(.sheet)
+                }
+            #endif
+            iconButton("info.circle", label: "Playing Strings", help: playingHelp) { info = true }
+        }
+    }
+
+    #if os(macOS)
+    private var instrumentKnobs: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                performanceKnob("Volume", parameter: .volume)
+                    .padding(.trailing, 6)
+                performanceKnob("Body", parameter: .body)
+                performanceKnob("Width", parameter: .ensemble)
+                RotaryKnob(title: "Brightness", label: "Brightness",
+                           value: percentBinding($brightnessPercent), defaultValue: 45)
+                RotaryKnob(title: "Reverb", label: "Room reverb",
+                           value: percentBinding($reverbPercent), defaultValue: 30)
+                bowingKnob
+                    .padding(.leading, 6)
+                RotaryKnob(title: "Velocity", label: "Velocity", value: $velocity,
+                           defaultValue: 60, range: 5...100)
+                performanceKnob("Tuning", parameter: .tuning)
+            }
+            HStack(spacing: 4) {
+                performanceKnob("Expr.", parameter: .expression)
+                performanceKnob("Vibrato", parameter: .vibrato)
+                performanceKnob("Bite", parameter: .bowBite)
+                performanceKnob("Pressure", parameter: .bowPressure)
+                performanceKnob("Transition", parameter: .legatoTransition)
+                RotaryKnob(title: "Contact", label: "Bow position (fingerboard to bridge)",
+                           value: percentBinding($bowPositionPercent), defaultValue: 75)
+                performanceKnob("Bow stroke", parameter: .bowTravel)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var bowingKnob: some View {
+        let articulation = bowArticulation
+        let choice = Binding<Double>(
+            get: { Double(articulation.wrappedValue.rawValue) },
+            set: { value in
+                if let option = BowArticulation(rawValue: Int(value)) {
+                    articulation.wrappedValue = option
+                }
+            }
+        )
+        return RotaryKnob(title: "Bowing", label: "Bowing", value: choice, defaultValue: 0,
+                          range: 0...2, dragDistance: 60, adjustmentStep: 1,
+                          choice: articulation.wrappedValue.label)
+    }
+
+    private func performanceKnob(_ title: LocalizedStringKey, parameter: PerformanceParameter) -> some View {
+        let tuning = parameter == .tuning
+        return RotaryKnob(title: title, label: LocalizedStringKey(parameter.label),
+                          value: performanceBinding(parameter), defaultValue: Double(parameter.defaultValue),
+                          range: Double(parameter.range.lowerBound)...Double(parameter.range.upperBound),
+                          step: tuning ? 0.1 : 1, adjustmentStep: tuning ? 0.1 : 2, showsHertz: tuning)
+    }
+    #endif
 
     private var bowArticulation: Binding<BowArticulation> {
         Binding(
@@ -178,52 +265,133 @@ struct StringsView: View {
         )
     }
 
+    #if os(iOS)
     private var soundControls: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Picker("Bowing", selection: bowArticulation) {
-                Text("Sustained").tag(BowArticulation.sustained)
-                Text("Legato").tag(BowArticulation.legato)
-                Text("Spiccato").tag(BowArticulation.spiccato)
+        VStack(spacing: 12) {
+            Picker("Sound controls", selection: $soundSection) {
+                Text("Bow and expression").tag(SoundSection.bow)
+                Text("Body and space").tag(SoundSection.space)
             }
-            .pickerStyle(.menu)
-            soundSlider("Bow position", percent: $bowPositionPercent)
-            HStack {
-                Text("Fingerboard")
-                Spacer()
-                Text("Bridge")
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if soundSection == .bow {
+                        bowControls
+                    } else {
+                        performanceSlider(.body)
+                        performanceSlider(.ensemble)
+                        soundSlider("Brightness", percent: $brightnessPercent)
+                        soundSlider("Room reverb", percent: $reverbPercent)
+                        performanceSlider(.volume)
+                        performanceSlider(.tuning)
+                    }
+                }
+                .padding(.vertical, 2)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.top, -12)
-            soundSlider("Brightness", percent: $brightnessPercent)
-            soundSlider("Room reverb", percent: $reverbPercent)
+            .frame(maxHeight: 400)
         }
-        .frame(width: 230)
         .padding(16)
+        .frame(maxWidth: 380)
+        .presentationDragIndicator(.visible)
     }
 
-    private func soundSlider(_ label: LocalizedStringKey, percent: Binding<Int>) -> some View {
-        let amount = Binding(
+    @ViewBuilder
+    private var bowControls: some View {
+        Picker("Bowing", selection: bowArticulation) {
+            ForEach(BowArticulation.allCases, id: \.self) { option in
+                Text(option.label).tag(option)
+            }
+        }
+        .pickerStyle(.menu)
+        performanceSlider(.expression)
+        performanceSlider(.vibrato)
+        performanceSlider(.bowBite)
+        performanceSlider(.bowPressure)
+        performanceSlider(.legatoTransition)
+        soundSlider("Bow position", percent: $bowPositionPercent)
+        sliderEndpoints("Fingerboard", "Bridge")
+        performanceSlider(.bowTravel)
+        sliderEndpoints("Frog", "Tip")
+    }
+
+    private func sliderEndpoints(_ from: LocalizedStringKey, _ to: LocalizedStringKey) -> some View {
+        HStack {
+            Text(from)
+            Spacer()
+            Text(to)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.top, -9)
+    }
+
+    #endif
+
+    private func performanceBinding(_ parameter: PerformanceParameter) -> Binding<Double> {
+        Binding(
+            get: { Double(performanceValues[parameter] ?? parameter.defaultValue) },
+            set: { value in
+                let value = parameter.clamped(Float(value))
+                performanceValues[parameter] = value
+                UserDefaults.standard.set(value, forKey: parameter.preferencesKey)
+                audio.setPerformance(parameter, value: value)
+            }
+        )
+    }
+
+    #if os(iOS)
+    private func performanceSlider(_ parameter: PerformanceParameter) -> some View {
+        let amount = performanceBinding(parameter)
+        let range = Double(parameter.range.lowerBound)...Double(parameter.range.upperBound)
+        let tuning = parameter == .tuning
+        let value = tuning
+            ? amount.wrappedValue.formatted(.number.precision(.fractionLength(1))) + " Hz"
+            : amount.wrappedValue.formatted(.percent.scale(1).precision(.fractionLength(0)))
+        return soundSlider(LocalizedStringKey(parameter.label), amount: amount, range: range,
+                           step: tuning ? 0.1 : 1, display: value)
+    }
+
+    #endif
+
+    private func percentBinding(_ percent: Binding<Int>) -> Binding<Double> {
+        Binding(
             get: { Double(min(100, max(0, percent.wrappedValue))) },
             set: { percent.wrappedValue = Int($0.rounded()) }
         )
+    }
+
+    #if os(iOS)
+    private func soundSlider(_ label: LocalizedStringKey, percent: Binding<Int>) -> some View {
+        let amount = percentBinding(percent)
         let value = amount.wrappedValue.formatted(.percent.scale(1))
-        return VStack(alignment: .leading, spacing: 8) {
+        return soundSlider(label, amount: amount, range: 0...100, step: 1, display: value)
+    }
+
+    private func soundSlider(_ label: LocalizedStringKey, amount: Binding<Double>,
+                             range: ClosedRange<Double>, step: Double, display: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(label).font(.headline)
                 Spacer(minLength: 16)
-                Text(value).monospacedDigit().foregroundStyle(.secondary)
+                Text(display).monospacedDigit().foregroundStyle(.secondary)
                     .accessibilityHidden(true)
             }
-            Slider(value: amount, in: 0...100, step: 1) { Text(label) }
-                .accessibilityValue(Text(value))
+            Slider(value: amount, in: range, step: step) { Text(label) }
+                .labelsHidden()
+                .accessibilityLabel(Text(label))
+                .accessibilityValue(Text(display))
         }
     }
+
+    #endif
 
     private var maximumOctave: Int { visibleNotes == 14 ? 6 : 7 }
 
     private var controls: some View {
         HStack(spacing: 8) {
+            #if os(iOS)
             HStack(spacing: 0) {
                 iconButton("chevron.left", label: "Lower octave") { shift(-1) }
                     .disabled(octave == 0)
@@ -258,11 +426,19 @@ struct StringsView: View {
                 .accessibilityValue(Text(verbatim: "\(Int((velocity * 1.27).rounded()))"))
             }
 
+            #else
+            audioRetry
+            Spacer(minLength: 0)
+            #endif
+
             pedalToggle("hand.tap", label: "Pizzicato", isOn: $pizzicato)
             iconButton("stop.circle", label: "Stop all sound", action: stopAllSound)
                 #if os(macOS)
                 .keyboardShortcut(.escape, modifiers: [])
                 #endif
+            #if os(macOS)
+            utilityControls
+            #endif
         }
     }
 
@@ -407,8 +583,111 @@ struct StringsView: View {
     }
 }
 
-private enum BowArticulation: Hashable {
+#if os(macOS)
+private struct RotaryKnob: View {
+    let title: LocalizedStringKey
+    let label: LocalizedStringKey
+    @Binding var value: Double
+    let defaultValue: Double
+    var range: ClosedRange<Double> = 0...100
+    var dragDistance: Double = 180
+    var step: Double = 1
+    var adjustmentStep: Double = 2
+    var showsHertz = false
+    var choice: LocalizedStringKey?
+    @State private var dragStart: Double?
+
+    private var span: Double { range.upperBound - range.lowerBound }
+
+    private var readout: Text {
+        if let choice { return Text(choice) }
+        if showsHertz {
+            let frequency = value.formatted(.number.precision(.fractionLength(1)))
+            return Text(verbatim: frequency + " Hz")
+        }
+        return Text(verbatim: value.formatted(.percent.scale(1).precision(.fractionLength(0))))
+    }
+
+    var body: some View {
+        VStack(spacing: 1) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .lineLimit(1)
+            knob
+            readout
+                .lineLimit(1)
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        .frame(width: 58)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(label))
+        .accessibilityValue(readout)
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: adjust(to: value + adjustmentStep)
+            case .decrement: adjust(to: value - adjustmentStep)
+            @unknown default: break
+            }
+        }
+        .help(Text("Drag vertically to adjust. Double-click to reset."))
+    }
+
+    private var knob: some View {
+        ZStack {
+            ForEach(0..<11) { tick in
+                Capsule()
+                    .fill(.white.opacity(tick.isMultiple(of: 5) ? 0.56 : 0.29))
+                    .frame(width: 1, height: tick.isMultiple(of: 5) ? 4 : 2)
+                    .offset(y: -22)
+                    .rotationEffect(.degrees(-135 + Double(tick) * 27))
+            }
+            Circle()
+                .fill(LinearGradient(colors: [Color(white: 0.32), Color(white: 0.11), Color(white: 0.05)],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                .overlay { Circle().strokeBorder(.white.opacity(0.20), lineWidth: 1) }
+                .frame(width: 36, height: 36)
+                .shadow(color: .black.opacity(0.55), radius: 2, y: 2)
+            Capsule()
+                .fill(.white.opacity(0.95))
+                .frame(width: 2, height: 8)
+                .offset(y: -11)
+                .rotationEffect(.degrees(-135 + (value - range.lowerBound) / span * 270))
+        }
+        .frame(width: 50, height: 50)
+        .contentShape(Rectangle())
+        .gesture(DragGesture(minimumDistance: 1)
+            .onChanged { event in
+                if dragStart == nil { dragStart = value }
+                adjust(to: (dragStart ?? value) - event.translation.height * (span / dragDistance))
+            }
+            .onEnded { _ in dragStart = nil })
+        .onTapGesture(count: 2) {
+            adjust(to: defaultValue)
+        }
+    }
+
+    private func adjust(to value: Double) {
+        let rounded = range.lowerBound + ((value - range.lowerBound) / step).rounded() * step
+        self.value = min(range.upperBound, max(range.lowerBound, rounded))
+    }
+}
+#endif
+
+private enum SoundSection: Hashable {
+    case bow, space
+}
+
+private enum BowArticulation: Int, CaseIterable {
     case sustained, legato, spiccato
+
+    var label: LocalizedStringKey {
+        switch self {
+        case .sustained: "Sustained"
+        case .legato: "Legato"
+        case .spiccato: "Spiccato"
+        }
+    }
 }
 
 private struct MIDIKey: Hashable {
@@ -426,7 +705,7 @@ private struct KeyWindow: Hashable {
 struct StringsView_Previews: PreviewProvider {
     static var previews: some View {
         #if os(macOS)
-        StringsView(playsAudio: false).frame(width: 900, height: 650)
+        StringsView(playsAudio: false).frame(width: 900, height: instrumentHeight)
         #else
         Group {
             StringsView(playsAudio: false)

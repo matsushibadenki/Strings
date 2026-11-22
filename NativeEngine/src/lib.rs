@@ -10,6 +10,18 @@ const VIBRATO_HZ: [f32; 3] = [4.7, 5.3, 5.9];
 const VIBRATO_DEPTH: [f32; 3] = [0.0027, 0.0038, 0.0031];
 const BOW_ENTRY_SECONDS: [f32; 3] = [0.004, 0.0, 0.009];
 
+// Matches the order of PerformanceParameter in Swift.
+const PERFORMANCE_DEFAULTS: [f32; 10] = [1.0, 1.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 0.5, 0.5];
+
+struct BowPerformance {
+    vibrato: f32,
+    bite: f32,
+    pressure: f32,
+    spread: f32,
+    travel: f32,
+    tuning_ratio: f32,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Gate {
     Held,
@@ -138,10 +150,10 @@ impl Voice {
         voice
     }
 
-    fn retune(&mut self, note: u32, rate: f32) {
+    fn retune(&mut self, note: u32, rate: f32, transition: f32) {
         self.note = note;
         self.target_frequency = note_frequency(note);
-        self.glide_frames = (rate * 0.016).round() as u32;
+        self.glide_frames = (rate * (0.004 + 0.048 * transition * transition)).round() as u32;
         self.glide_step = (self.target_frequency - self.frequency) / self.glide_frames as f32;
     }
 
@@ -156,6 +168,7 @@ impl Voice {
         fast_release: f32,
         noise: f32,
         bow: &[f32; PARTIALS],
+        performance: &BowPerformance,
     ) -> [f32; 2] {
         self.age += inverse_rate;
         let pizzicato = self.articulation == Articulation::Pizzicato;
@@ -200,6 +213,15 @@ impl Voice {
             0.67 + 0.29 * brightness - 0.07 * onset
         };
         let vibrato_entry = ((self.age - 0.065) * 3.3).clamp(0.0, 1.0);
+        let tilt = if pizzicato {
+            tilt
+        } else {
+            (tilt
+                + 0.14 * (performance.pressure - 0.5)
+                + 0.06 * (0.5 - performance.travel)
+                + 0.12 * (performance.bite - 0.5) * onset)
+                .clamp(0.35, 1.0)
+        };
         let mut amplitudes = [0.0; PARTIALS];
         let mut falloff = 1.0;
         for index in 0..self.partials {
@@ -215,7 +237,7 @@ impl Voice {
             } else {
                 (self.vibrato[desk] * TAU).sin()
             };
-            let modulation = vibrato * vibrato_entry * VIBRATO_DEPTH[desk];
+            let modulation = vibrato * vibrato_entry * VIBRATO_DEPTH[desk] * performance.vibrato;
             let (sine, cosine) = (self.phase[desk] * TAU).sin_cos();
             let (mut partial_sine, mut partial_cosine) = (sine, cosine);
             let mut signal = 0.0;
@@ -226,7 +248,12 @@ impl Voice {
                     partial_cosine * cosine - partial_sine * sine,
                 );
             }
-            self.phase[desk] += self.frequency * DETUNE[desk] * (1.0 + modulation) * inverse_rate;
+            let detune = 1.0 + (DETUNE[desk] - 1.0) * performance.spread;
+            self.phase[desk] += self.frequency
+                * performance.tuning_ratio
+                * detune
+                * (1.0 + modulation)
+                * inverse_rate;
             self.phase[desk] -= self.phase[desk].trunc();
             if spiccato {
                 let delay = 0.35 * BOW_ENTRY_SECONDS[desk];
@@ -238,8 +265,10 @@ impl Voice {
                 let entry = ((self.age - delay) * 70.0).clamp(0.0, 1.0);
                 signal *= entry * (1.0 + 0.041 * vibrato * vibrato_entry);
             }
-            out[0] += signal * PAN[desk][0];
-            out[1] += signal * PAN[desk][1];
+            let [left, right] = PAN[desk];
+            let center = (left + right) * 0.5;
+            out[0] += signal * (center + (left - center) * performance.spread);
+            out[1] += signal * (center + (right - center) * performance.spread);
         }
         // The broadband scrape is strongest before the bow has settled.
         self.friction_low += (noise - self.friction_low) * (4400.0 * inverse_rate);
@@ -252,6 +281,13 @@ impl Voice {
             friction * self.impact * impact
         } else {
             friction * (0.044 + 0.048 * brightness + 0.55 * onset * onset)
+        };
+        let air = if pizzicato {
+            air
+        } else {
+            air * (0.30 + 1.40 * performance.bite)
+                * (0.75 + 0.50 * performance.pressure)
+                * (1.20 - 0.40 * performance.travel)
         };
         let scale = self.level * if pizzicato { 1.44 } else { 0.64 };
         [(out[0] + air) * scale, (out[1] + air) * scale]
@@ -369,6 +405,8 @@ pub struct StringsDSP {
     room_damping: f32,
     room: [Delay; 4],
     body: [[BodyMode; 6]; 2],
+    performance: [f32; PERFORMANCE_DEFAULTS.len()],
+    performance_targets: [f32; PERFORMANCE_DEFAULTS.len()],
     strike: u32,
     noise: u32,
 }
@@ -417,6 +455,8 @@ impl StringsDSP {
                 ]
                 .map(|(hz, q, gain)| BodyMode::new(rate, hz * spread, q, gain))
             }),
+            performance: PERFORMANCE_DEFAULTS,
+            performance_targets: PERFORMANCE_DEFAULTS,
             strike: 0,
             noise: 0x792a_641b,
         }
@@ -439,7 +479,7 @@ impl StringsDSP {
             self.legato_keys[self.legato_count] = note as u8;
             self.legato_count += 1;
             if let Some(slot) = self.legato_voice {
-                self.voices[slot].retune(note, self.rate);
+                self.voices[slot].retune(note, self.rate, self.performance_targets[3]);
                 return;
             }
         }
@@ -512,7 +552,11 @@ impl StringsDSP {
         if let Some(slot) = self.legato_voice {
             if self.voices[slot].note == note {
                 if let Some(previous) = self.legato_keys[..self.legato_count].last() {
-                    self.voices[slot].retune(u32::from(*previous), self.rate);
+                    self.voices[slot].retune(
+                        u32::from(*previous),
+                        self.rate,
+                        self.performance_targets[3],
+                    );
                 } else {
                     self.legato_voice = None;
                 }
@@ -568,10 +612,25 @@ impl StringsDSP {
             a + (self.bow_table[index + 1][partial] - a) * fraction
         });
 
+        for (value, target) in self.performance.iter_mut().zip(self.performance_targets) {
+            *value += (target - *value) * self.control_smoothing;
+        }
+        let [expression, vibrato, bite, _, pressure, body_mix, spread, volume, travel, tuning] =
+            self.performance;
+        let performance = BowPerformance {
+            vibrato,
+            bite,
+            pressure,
+            spread,
+            travel,
+            tuning_ratio: (430.0 + 20.0 * tuning) / 440.0,
+        };
+
         let mut mix = [0.0; 2];
         let inverse_rate = self.rate.recip();
-        let bow_gain = self.expression * self.expression;
-        let bow_brightness = self.brightness * (0.68 + 0.32 * self.expression);
+        let expression = expression * self.expression;
+        let bow_gain = expression * expression;
+        let bow_brightness = self.brightness * (0.68 + 0.32 * expression);
         for voice in &mut self.voices {
             if voice.active() {
                 self.noise ^= self.noise << 13;
@@ -579,12 +638,18 @@ impl StringsDSP {
                 self.noise ^= self.noise << 5;
                 let noise = self.noise as i32 as f32 * (1.0 / 2_147_483_648.0);
                 let (brightness, gain) = if voice.articulation == Articulation::Pizzicato {
-                    (self.brightness, self.expression)
+                    (self.brightness, expression)
                 } else {
                     (bow_brightness, bow_gain)
                 };
-                let [left, right] =
-                    voice.sample(inverse_rate, brightness, self.fast_release, noise, &bow);
+                let [left, right] = voice.sample(
+                    inverse_rate,
+                    brightness,
+                    self.fast_release,
+                    noise,
+                    &bow,
+                    &performance,
+                );
                 mix[0] += left * gain;
                 mix[1] += right * gain;
             }
@@ -596,7 +661,7 @@ impl StringsDSP {
             .map(|delay| delay.tap(self.room_damping));
         for (direct, modes) in mix.iter_mut().zip(&mut self.body) {
             let body: f32 = modes.iter_mut().map(|mode| mode.sample(*direct)).sum();
-            *direct += body;
+            *direct += body * body_mix;
         }
         let [left, right] = mix;
         self.room[0].push(left + (a + b + c + d) * 0.34);
@@ -605,7 +670,10 @@ impl StringsDSP {
         self.room[3].push(right + (a - b - c + d) * 0.34);
         let wet = self.reverb * 0.26;
         let limit = |sample: f32| sample / (1.0 + 0.65 * sample.abs());
-        [limit(left + (a + d) * wet), limit(right + (b + c) * wet)]
+        [
+            limit(left + (a + d) * wet) * volume,
+            limit(right + (b + c) * wet) * volume,
+        ]
     }
 }
 
@@ -675,6 +743,15 @@ pub unsafe extern "C" fn strings_dsp_set_reverb(dsp: *mut StringsDSP, amount: f3
 #[no_mangle]
 pub unsafe extern "C" fn strings_dsp_set_expression(dsp: *mut StringsDSP, amount: f32) {
     (*dsp).expression_target = amount.clamp(0.0, 1.0);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn strings_dsp_set_performance(dsp: *mut StringsDSP, index: u32, value: f32) {
+    if value.is_finite() {
+        if let Some(target) = (*dsp).performance_targets.get_mut(index as usize) {
+            *target = value.clamp(0.0, 1.0);
+        }
+    }
 }
 
 #[no_mangle]
@@ -790,6 +867,37 @@ mod tests {
             dsp.render_frame();
         }
         assert!(!dsp.voices[0].active());
+    }
+
+    #[test]
+    fn performance_controls_change_the_rendered_signal() {
+        for (index, default) in PERFORMANCE_DEFAULTS.iter().enumerate() {
+            let render = |value| {
+                let mut dsp = StringsDSP::new(48_000.0);
+                dsp.set_legato(true);
+                unsafe { strings_dsp_set_performance(&mut dsp, index as u32, value) };
+                dsp.note_on(62, 0.8, false);
+                (0..24_000)
+                    .map(|frame| {
+                        if frame == 9_600 {
+                            dsp.note_on(65, 0.8, false);
+                        }
+                        dsp.render_frame()
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let baseline = render(*default);
+            let adjusted = render(0.0);
+            let difference: f32 = baseline
+                .iter()
+                .zip(adjusted)
+                .map(|(a, b)| (a[0] - b[0]).abs() + (a[1] - b[1]).abs())
+                .sum();
+            assert!(
+                difference > 0.1,
+                "control index {index} did not change the output"
+            );
+        }
     }
 
     #[test]

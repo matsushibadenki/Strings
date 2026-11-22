@@ -51,6 +51,12 @@ final class StringsModel {
         strings_dsp_set_reverb(handle, amount)
     }
 
+    func setPerformance(_ parameter: PerformanceParameter, value: Float) {
+        let bounds = parameter.range
+        let normalized = (parameter.clamped(value) - bounds.lowerBound) / (bounds.upperBound - bounds.lowerBound)
+        strings_dsp_set_performance(handle, parameter.rawValue, normalized)
+    }
+
     func render(_ left: UnsafeMutablePointer<Float>, _ right: UnsafeMutablePointer<Float>, frames: UInt32) {
         strings_dsp_render(handle, left, right, frames)
     }

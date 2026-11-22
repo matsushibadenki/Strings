@@ -22,6 +22,7 @@ final class StringsAudioUnit: AUAudioUnit {
     private let bowPositionPercent = Atomic<Float>(75)
     private let legato = Atomic<Bool>(false)
     private let spiccato = Atomic<Bool>(false)
+    private let performance = PerformanceSettings()
 
     override init(componentDescription: AudioComponentDescription,
                   options: AudioComponentInstantiationOptions = []) throws {
@@ -44,13 +45,26 @@ final class StringsAudioUnit: AUAudioUnit {
             parameter.value = initial
             return parameter
         }
-        let tree = AUParameterTree.createTree(withChildren: [
+        let existingParameters = [
             makeParameter("roomReverb", label: "Room reverb", address: 0, initial: 30),
             makeParameter("brightness", label: "Brightness", address: 1, initial: 45),
             makeParameter("bowPosition", label: "Bow position", address: 2, initial: 75),
             makeParameter("legato", label: "Legato", address: 3, initial: 0, unit: .boolean),
             makeParameter("spiccato", label: "Spiccato", address: 4, initial: 0, unit: .boolean),
-        ])
+        ]
+        let addedParameters = PerformanceParameter.allCases.map { control in
+            let parameter = AUParameterTree.createParameter(
+                withIdentifier: control.identifier,
+                name: NSLocalizedString(control.label, bundle: bundle, comment: ""),
+                address: AUParameterAddress(control.rawValue) + 5,
+                min: control.range.lowerBound, max: control.range.upperBound,
+                unit: control == .tuning ? .hertz : .percent, unitName: nil,
+                flags: [.flag_IsReadable, .flag_IsWritable], valueStrings: nil, dependentParameters: nil
+            )
+            parameter.value = control.defaultValue
+            return parameter
+        }
+        let tree = AUParameterTree.createTree(withChildren: existingParameters + addedParameters)
         tree.implementorValueObserver = { [weak self] parameter, value in
             self?.setParameter(parameter.address, value)
         }
@@ -60,7 +74,10 @@ final class StringsAudioUnit: AUAudioUnit {
             case 2: return self?.bowPositionPercent.load(ordering: .relaxed) ?? 75
             case 3: return self?.legato.load(ordering: .relaxed) == true ? 1 : 0
             case 4: return self?.spiccato.load(ordering: .relaxed) == true ? 1 : 0
-            default: return self?.reverbPercent.load(ordering: .relaxed) ?? 30
+            case 0: return self?.reverbPercent.load(ordering: .relaxed) ?? 30
+            default:
+                guard let control = Self.performanceParameter(at: parameter.address) else { return 0 }
+                return self?.performance[control] ?? control.defaultValue
             }
         }
         parameterTree = tree
@@ -98,6 +115,7 @@ final class StringsAudioUnit: AUAudioUnit {
             guard bus == 0 else { return kAudioUnitErr_InvalidElement }
             guard count <= renderer.capacity else { return kAudioUnitErr_TooManyFramesToProcess }
             flags.pointee.remove(.unitRenderAction_OutputIsSilence)
+            self.performance.apply(to: renderer.model)
             renderer.model.setReverb(self.reverbPercent.load(ordering: .relaxed) / 100)
             renderer.model.setBrightness(self.brightnessPercent.load(ordering: .relaxed) / 100)
             renderer.model.setBowPosition(self.bowPositionPercent.load(ordering: .relaxed) / 100)
@@ -117,8 +135,14 @@ final class StringsAudioUnit: AUAudioUnit {
         case 2: bowPositionPercent.store(clamped, ordering: .relaxed)
         case 3: legato.store(percent >= 0.5, ordering: .relaxed)
         case 4: spiccato.store(percent >= 0.5, ordering: .relaxed)
-        default: break
+        default:
+            if let control = Self.performanceParameter(at: address) { performance[control] = percent }
         }
+    }
+
+    fileprivate static func performanceParameter(at address: AUParameterAddress) -> PerformanceParameter? {
+        guard address >= 5, let index = UInt32(exactly: address - 5) else { return nil }
+        return PerformanceParameter(rawValue: index)
     }
 
     private static func supports(_ format: AVAudioFormat) -> Bool {
@@ -199,7 +223,10 @@ private final class InstrumentRender {
                     case 2: model.setBowPosition(amount)
                     case 3: model.setLegato(parameter.value >= 0.5)
                     case 4: model.setSpiccato(parameter.value >= 0.5)
-                    default: break
+                    default:
+                        if let control = StringsAudioUnit.performanceParameter(at: parameter.parameterAddress) {
+                            model.setPerformance(control, value: parameter.value)
+                        }
                     }
                 }
             default:
